@@ -1,9 +1,187 @@
-<h1>EC2 Details</h1>
-<p>Served by Load balancer new</p>
-<pre>
-ID: {{INSTANCE_ID}}
-Type: {{INSTANCE_TYPE}}
-AZ: {{AVAILABILITY_ZONE}}
-Private IP: {{LOCAL_IPV4}}
-Public IP: {{PUBLIC_IPV4}}
-</pre>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotating Octahedron with Physics</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        // Create octahedron
+        const octaGeometry = new THREE.OctahedronGeometry(2, 0);
+        const octaMaterial = new THREE.MeshPhongMaterial({
+            color: 0x00d4ff,
+            transparent: true,
+            opacity: 0.3,
+            wireframe: false,
+            side: THREE.DoubleSide
+        });
+        const octahedron = new THREE.Mesh(octaGeometry, octaMaterial);
+        scene.add(octahedron);
+        
+        // Add wireframe
+        const wireGeometry = new THREE.OctahedronGeometry(2, 0);
+        const wireMaterial = new THREE.MeshBasicMaterial({
+            color: 0x00ffff,
+            wireframe: true
+        });
+        const wireframe = new THREE.Mesh(wireGeometry, wireMaterial);
+        octahedron.add(wireframe);
+        
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+        
+        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        pointLight.position.set(10, 10, 10);
+        scene.add(pointLight);
+        
+        // Create balls with physics
+        const balls = [];
+        const ballGeometry = new THREE.SphereGeometry(0.15, 16, 16);
+        const colors = [0xff6b6b, 0x4ecdc4, 0xffe66d];
+        
+        for (let i = 0; i < 3; i++) {
+            const ballMaterial = new THREE.MeshPhongMaterial({ color: colors[i] });
+            const ball = new THREE.Mesh(ballGeometry, ballMaterial);
+            
+            // Physics properties
+            ball.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.08,
+                (Math.random() - 0.5) * 0.08,
+                (Math.random() - 0.5) * 0.08
+            );
+            ball.position.set(
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2,
+                (Math.random() - 0.5) * 0.2
+            );
+            
+            scene.add(ball);
+            balls.push(ball);
+        }
+        
+        camera.position.z = 5;
+        
+        // Physics constants
+        const gravity = new THREE.Vector3(0, -0.002, 0);
+        const damping = 0.95;
+        const octaRadius = 2;
+        
+        // Get octahedron faces for collision
+        const octaVertices = [
+            new THREE.Vector3(0, octaRadius, 0),
+            new THREE.Vector3(0, -octaRadius, 0),
+            new THREE.Vector3(octaRadius, 0, 0),
+            new THREE.Vector3(-octaRadius, 0, 0),
+            new THREE.Vector3(0, 0, octaRadius),
+            new THREE.Vector3(0, 0, -octaRadius)
+        ];
+        
+        function checkOctahedronCollision(ball) {
+            const localPos = ball.position.clone();
+            
+            // Octahedron faces define 8 planes
+            // Top 4 faces and bottom 4 faces
+            const faces = [
+                { normal: new THREE.Vector3(1, 1, 1).normalize(), d: octaRadius / Math.sqrt(3) },
+                { normal: new THREE.Vector3(-1, 1, 1).normalize(), d: octaRadius / Math.sqrt(3) },
+                { normal: new THREE.Vector3(1, 1, -1).normalize(), d: octaRadius / Math.sqrt(3) },
+                { normal: new THREE.Vector3(-1, 1, -1).normalize(), d: octaRadius / Math.sqrt(3) },
+                { normal: new THREE.Vector3(1, -1, 1).normalize(), d: octaRadius / Math.sqrt(3) },
+                { normal: new THREE.Vector3(-1, -1, 1).normalize(), d: octaRadius / Math.sqrt(3) },
+                { normal: new THREE.Vector3(1, -1, -1).normalize(), d: octaRadius / Math.sqrt(3) },
+                { normal: new THREE.Vector3(-1, -1, -1).normalize(), d: octaRadius / Math.sqrt(3) }
+            ];
+            
+            faces.forEach(face => {
+                const distance = localPos.dot(face.normal) - face.d;
+                if (distance > -0.15) {
+                    // Push ball inside
+                    const penetration = distance + 0.15;
+                    ball.position.sub(face.normal.clone().multiplyScalar(penetration * 1.1));
+                    
+                    // Reflect velocity with proper physics
+                    const vel = ball.velocity.clone();
+                    const dot = vel.dot(face.normal);
+                    if (dot > 0) {
+                        ball.velocity.sub(face.normal.clone().multiplyScalar(2 * dot));
+                        ball.velocity.multiplyScalar(damping);
+                    }
+                }
+            });
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotate octahedron
+            octahedron.rotation.x += 0.005;
+            octahedron.rotation.y += 0.01;
+            
+            // Update ball physics
+            balls.forEach(ball => {
+                // Transform gravity to octahedron's local space
+                const localGravity = gravity.clone().applyQuaternion(octahedron.quaternion.clone().invert());
+                
+                // Apply gravity in local space
+                ball.velocity.add(localGravity);
+                
+                // Update position
+                ball.position.add(ball.velocity);
+                
+                // Check collision with octahedron
+                checkOctahedronCollision(ball);
+                
+                // Ball-to-ball collision
+                balls.forEach(otherBall => {
+                    if (ball !== otherBall) {
+                        const dist = ball.position.distanceTo(otherBall.position);
+                        if (dist < 0.3) {
+                            const direction = new THREE.Vector3()
+                                .subVectors(ball.position, otherBall.position)
+                                .normalize();
+                            const overlap = 0.3 - dist;
+                            ball.position.add(direction.clone().multiplyScalar(overlap * 0.5));
+                            otherBall.position.sub(direction.clone().multiplyScalar(overlap * 0.5));
+                            
+                            // Exchange velocities (simplified)
+                            const tempVel = ball.velocity.clone();
+                            ball.velocity.lerp(otherBall.velocity, 0.5);
+                            otherBall.velocity.lerp(tempVel, 0.5);
+                        }
+                    }
+                });
+            });
+            
+            renderer.render(scene, camera);
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        animate();
+    </script>
+</body>
+</html>
